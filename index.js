@@ -16,13 +16,19 @@ function myPromise(f) {
   this.onFulfilled = null;
   this.onRejected = null;
   if(typeof f === "function") {
-    f(this._resolve.bind(this), this._reject.bind(this));
+    try {
+      f(this._resolve.bind(this), this._reject.bind(this));
+    }catch (e) {
+      this._reject(e);
+    }
   }else {
     throw new Error('myPromise must accept a function as a parameter')
   }
 }
 
 myPromise.prototype._reject = function (error) {
+  // console.log(error);
+  // console.log(this);
   if(this.state === PENDING) {
     this.state = REJECTED;
     this.err = error;
@@ -30,10 +36,11 @@ myPromise.prototype._reject = function (error) {
       this.onRejected(this.err);
     }
   }
-  console.log("reject");
+  // console.log("reject");
 }
 
 myPromise.prototype._resolve = function (data) {
+  // console.log(this);
   if(this.state === PENDING) {
     //如果传入了一个promise作为参数，应该由promise的状态决定当前promise的状态
     let that = this;
@@ -56,7 +63,9 @@ myPromise.prototype._resolve = function (data) {
       this.state = FULFILLED;
       // console.log(Object.getPrototypeOf(data) === myPromise.prototype);
       this.data = data;
+      // console.log(this.onFulfilled)
       if (typeof this.onFulfilled === "function") {
+        // console.log("fewfwefw")
         this.onFulfilled(this.data);
       }
     }
@@ -65,31 +74,185 @@ myPromise.prototype._resolve = function (data) {
 
 //then方法异步执行,返回一个新的Promise
 myPromise.prototype.then = function(resolve, reject) {
-  let that = this;
   let res;
-  console.log(that)
+  // console.log(that)
 
 
   return new myPromise((resolveNext, rejectNext) => {
+    let onResolve = () => {
+      try {
+        if(typeof resolve != "function") {
+          // console.log("cao")
+          resolveNext(this.data)
+        }else {
+          // console.log("onresolve");
+          let res = resolve(this.data);
+          // res.data = "wejfiwoejfiwoefj";
+          // console.log(res);
+          if(res instanceof myPromise) {
+            res.then(resolveNext, rejectNext);
+          }else {
+            resolveNext(res);
+          }
+        }
+      }catch (e) {
+        // console.log(e)
+        rejectNext(e);
+      }
+    }
+    let onReject = () => {
+      try {
+        // console.log("onreject")
+        if(typeof reject != "function") {
+          // console.log("reject")
+          rejectNext(this.err);
+        }else {
+          let res = reject(this.err);
+          if(res instanceof myPromise) {
+            res.then(resolveNext, rejectNext);
+          }else {
+            resolveNext(res);
+          }
+        }
+      }catch (e) {
+        rejectNext(e);
+      }
+    }
 
+    setTimeout(() => {
+      switch (this.state) {
+        case PENDING:
+          // console.log(this)
+          this.onFulfilled = onResolve;
+          this.onRejected = onReject;
+          break;
+        case FULFILLED:
+          // console.log(this)
+          // console.log("fufilled")
+          onResolve();
+          break;
+        case REJECTED:
+          // console.log(this)
+          // console.log("rejected")
+          onReject();
+          break;
+      }
+    })
   })
-
-
-
-
 }
 
+myPromise.prototype.catch = function(reject) {
+  return this.then(function () {
+
+  }, function (err) {
+    reject(err);
+  })
+}
+
+myPromise.prototype.resolve = function(val) {
+  if(val instanceof myPromise) {
+    return val;
+  }
+
+  return new myPromise(function (resolve) {
+    resolve(val);
+  })
+}
+
+myPromise.prototype.reject = function(err) {
+  if(err instanceof myPromise) {
+    return err;
+  }
+
+  return new myPromise(function (resolve, reject) {
+    reject(err);
+  })
+}
+
+myPromise.prototype.all = function(list) {
+  return new myPromise((onResolve, onReject) => {
+    let res = [],
+        i=0;
+    // console.log(this.prototype);
+    // console.log(Object.getPrototypeOf(this));
+    for(let val of list) {
+      this.resolve(val).then(function (data) {
+        i++;
+        res.push(data);
+        if(i === list.length) {
+          // console.log(i);
+          onResolve(res);
+        }
+      }, function (err) {
+        onReject(err);
+      })
+    }
+  })
+}
+
+myPromise.prototype.race = function(list) {
+  return new myPromise((onResolve, onReject) => {
+    for(let val of list) {
+      this.resolve(val).then(function (data) {
+        onResolve(data);
+      }, function (err) {
+        onReject(err);
+      })
+    }
+  })
+}
+
+myPromise.prototype.finally = function(f) {
+  return this.then(function (data) {
+    f();
+    return data;
+  }, function (err) {
+    f();
+    return err;
+  })
+}
+
+
+
 let promise = new myPromise(function (resolve, reject) {
-  // console.log("promise");
-  setTimeout(function () {
-    resolve("success");
-  }, 2000)
-}).then(function (data) {
-  console.log(data);
-}, function () {
-  // console.log("error");
+  resolve("hello")
 })
 
-// console.log(promise);
+promise.finally(function () {
+  console.log("xxxxx");
+}).then(function (data) {
+  // console.log("ewfjiwoejf")
+  console.log(data)
+}, function (err) {
+  console.log(err)
+})
 
-// new myPromise("efw");
+// promise
+
+// let promise = new myPromise(function (resolve) {
+//   resolve();
+// });
+//
+// // console.log(promise.resolve("1"));
+//
+// let p1 = new myPromise(function (resolve) {
+//   setTimeout(function () {
+//     resolve("1")
+//   }, 1000);
+// });
+// let p2 = new myPromise(function (resolve) {
+//   setTimeout(function () {
+//     resolve("2")
+//   }, 2000);
+// });
+// let p3 = new myPromise(function (resolve) {
+//   setTimeout(function () {
+//     resolve("3")
+//   }, 3000);
+// });
+//
+// (promise.race([p1, p2, p3])).then(function (data) {
+//   console.log(data)
+// }, function (err) {
+//   console.log(err);
+// })
